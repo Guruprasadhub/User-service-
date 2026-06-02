@@ -1,0 +1,92 @@
+package com.example.demo.Controller;
+
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+
+import com.example.demo.Service.UserService;
+import com.example.demo.dto.LoginRequestDTO;
+import com.example.demo.dto.SignUpRequestDTO;
+import com.example.demo.dto.UserResponseDTO;
+import com.example.demo.model.Role;
+
+class UserControllerTest {
+
+    private MockMvc mockMvc;
+
+    @BeforeEach
+    void setUp() {
+
+        // ✅ Fake service implementation (NO Mockito)
+        UserService fakeService = new UserService(null, null, null) {
+
+            @Override
+            public UserResponseDTO signup(SignUpRequestDTO dto) {
+                UserResponseDTO res = new UserResponseDTO();
+                res.setId(1L);
+                res.setName(dto.getName());
+                res.setEmail(dto.getEmail());
+                res.setRole(dto.getRole());
+                return res;
+            }
+
+            @Override
+            public String login(LoginRequestDTO dto) {
+                return "fake-jwt-token";
+            }
+        };
+
+        UserController controller = new UserController(fakeService);
+
+        mockMvc = MockMvcBuilders
+                .standaloneSetup(controller)
+                .build();
+    }
+
+    // ✅ SIGNUP TEST
+    @Test
+    void signup_success() throws Exception {
+
+        String json = """
+            {
+              "name": "Doctor",
+              "email": "doctor@test.com",
+              "password": "1234",
+              "contact": "999",
+              "role": "DOCTOR"
+            }
+            """;
+
+        mockMvc.perform(post("/users/signup")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.email").value("doctor@test.com"))
+                .andExpect(jsonPath("$.role").value("DOCTOR"));
+    }
+
+    // ✅ LOGIN TEST
+    @Test
+    void login_success() throws Exception {
+
+        String json = """
+            {
+              "email": "admin@test.com",
+              "password": "admin123"
+            }
+            """;
+
+        mockMvc.perform(post("/users/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json))
+                .andExpect(status().isOk())
+                .andExpect(content().string("fake-jwt-token"));
+    }
+}
