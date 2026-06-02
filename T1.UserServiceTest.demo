@@ -1,0 +1,151 @@
+package com.example.demo;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
+import java.util.Optional;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.crypto.password.PasswordEncoder;
+
+import com.example.demo.Exception.InvalidCredentialsException;
+import com.example.demo.Exception.UserAlreadyExistsException;
+import com.example.demo.Exception.UserNotFoundException;
+import com.example.demo.Repository.UserRepository;
+import com.example.demo.Security.JwtUtil;
+import com.example.demo.Service.UserService;
+import com.example.demo.dto.LoginRequestDTO;
+import com.example.demo.dto.SignUpRequestDTO;
+import com.example.demo.dto.UserResponseDTO;
+import com.example.demo.model.Role;
+import com.example.demo.model.User;
+
+@ExtendWith(MockitoExtension.class)
+class UserServiceTest {
+
+    @Mock
+    private UserRepository repo;
+
+    @Mock
+    private PasswordEncoder encoder;
+
+    private JwtUtil jwtUtil;          // ✅ REAL instance
+    private UserService service;      // ✅ MANUAL creation
+
+    @BeforeEach
+    void setUp() {
+        jwtUtil = new JwtUtil();
+        service = new UserService(repo, encoder, jwtUtil);
+    }
+
+    // ✅ SIGNUP SUCCESS
+    @Test
+    void signup_success() {
+
+        SignUpRequestDTO dto = new SignUpRequestDTO();
+        dto.setName("Doctor");
+        dto.setEmail("doctor@test.com");
+        dto.setPassword("1234");
+        dto.setContact("999");
+        dto.setRole(Role.DOCTOR);
+
+        when(repo.findByEmail(dto.getEmail()))
+                .thenReturn(Optional.empty());
+
+        when(encoder.encode("1234"))
+                .thenReturn("hashed");
+
+        when(repo.save(any(User.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        UserResponseDTO response = service.signup(dto);
+
+        assertEquals("doctor@test.com", response.getEmail());
+        assertEquals(Role.DOCTOR, response.getRole());
+    }
+
+    // ❌ SIGNUP EMAIL EXISTS
+    @Test
+    void signup_emailAlreadyExists() {
+
+        SignUpRequestDTO dto = new SignUpRequestDTO();
+        dto.setEmail("doctor@test.com");
+
+        when(repo.findByEmail(dto.getEmail()))
+                .thenReturn(Optional.of(new User()));
+
+        assertThrows(
+                UserAlreadyExistsException.class,
+                () -> service.signup(dto)
+        );
+    }
+
+    // ✅ LOGIN SUCCESS (REAL JWT)
+    @Test
+    void login_success() {
+
+        LoginRequestDTO dto = new LoginRequestDTO();
+        dto.setEmail("admin@test.com");
+        dto.setPassword("admin123");
+
+        User user = new User();
+        user.setId(1L);
+        user.setPassword("hashed");
+        user.setRole(Role.ADMIN);
+
+        when(repo.findByEmail(dto.getEmail()))
+                .thenReturn(Optional.of(user));
+
+        when(encoder.matches("admin123", "hashed"))
+                .thenReturn(true);
+
+        String token = service.login(dto);
+
+        assertNotNull(token);
+        assertFalse(token.isBlank());
+    }
+
+    // ❌ LOGIN USER NOT FOUND
+    @Test
+    void login_userNotFound() {
+
+        LoginRequestDTO dto = new LoginRequestDTO();
+        dto.setEmail("unknown@test.com");
+
+        when(repo.findByEmail(dto.getEmail()))
+                .thenReturn(Optional.empty());
+
+        assertThrows(
+                UserNotFoundException.class,
+                () -> service.login(dto)
+        );
+    }
+
+    // ❌ LOGIN INVALID PASSWORD
+    @Test
+    void login_invalidPassword() {
+
+        LoginRequestDTO dto = new LoginRequestDTO();
+        dto.setEmail("doctor@test.com");
+        dto.setPassword("wrong");
+
+        User user = new User();
+        user.setPassword("hashed");
+        user.setRole(Role.DOCTOR);
+
+        when(repo.findByEmail(dto.getEmail()))
+                .thenReturn(Optional.of(user));
+
+        when(encoder.matches("wrong", "hashed"))
+                .thenReturn(false);
+
+        assertThrows(
+                InvalidCredentialsException.class,
+                () -> service.login(dto)
+        );
+    }
+}
